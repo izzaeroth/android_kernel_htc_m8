@@ -89,7 +89,6 @@ struct pronto_data {
 	bool crash;
 	struct delayed_work cancel_vote_work;
 	struct ramdump_device *ramdump_dev;
-	struct work_struct wcnss_wdog_bite_work;
 };
 
 static int pil_pronto_make_proxy_vote(struct pil_desc *pil)
@@ -339,16 +338,6 @@ static irqreturn_t wcnss_err_fatal_intr_handler(int irq, void *dev_id)
 	return IRQ_HANDLED;
 }
 
-static void wcnss_wdog_bite_work_hdlr(struct work_struct *wcnss_work)
-{
-	struct pronto_data *drv = container_of(wcnss_work, struct pronto_data,
-		wcnss_wdog_bite_work);
-
-	wcnss_log_debug_regs_on_bite();
-
-	restart_wcnss(drv);
-}
-
 static irqreturn_t wcnss_wdog_bite_irq_hdlr(int irq, void *dev_id)
 {
 	struct pronto_data *drv = subsys_to_drv(dev_id);
@@ -361,6 +350,7 @@ static irqreturn_t wcnss_wdog_bite_irq_hdlr(int irq, void *dev_id)
 		pr_err("Ignoring wcnss bite irq, restart in progress\n");
 		return IRQ_HANDLED;
 	}
+	wcnss_log_debug_regs_on_bite();
 
 #if defined(CONFIG_HTC_DEBUG_SSR)
 	pr_err("Watchdog bite received from Pronto!\n");
@@ -368,7 +358,7 @@ static irqreturn_t wcnss_wdog_bite_irq_hdlr(int irq, void *dev_id)
 #endif
 	subsys_set_crash_status(drv->subsys, true);
 	drv->restart_inprogress = true;
-	schedule_work(&drv->wcnss_wdog_bite_work);
+	restart_wcnss(drv);
 
 	return IRQ_HANDLED;
 }
@@ -521,7 +511,6 @@ static int __devinit pil_pronto_probe(struct platform_device *pdev)
 	drv->subsys_desc.wdog_bite_handler = wcnss_wdog_bite_irq_hdlr;
 
 	INIT_DELAYED_WORK(&drv->cancel_vote_work, wcnss_post_bootup);
-	INIT_WORK(&drv->wcnss_wdog_bite_work, wcnss_wdog_bite_work_hdlr);
 
 	drv->subsys = subsys_register(&drv->subsys_desc);
 	if (IS_ERR(drv->subsys)) {
